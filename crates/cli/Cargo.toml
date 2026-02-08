@@ -1,0 +1,18 @@
+[package]
+name = "cosmwasm-guard-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "cosmwasm-guard"
+path = "src/main.rs"
+
+[dependencies]
+cosmwasm-guard = { path = "../core" }
+cosmwasm-guard-detectors = { path = "../detectors" }
+clap.workspace = true
+serde_json.workspace = true
+colored.workspace = true
+anyhow.workspace = true
+walkdir.workspace = true
