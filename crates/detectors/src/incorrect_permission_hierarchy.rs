@@ -117,6 +117,7 @@ impl Detector for IncorrectPermissionHierarchy {
                          matches before updating."
                             .to_string(),
                     ),
+                    fix: None,
                 });
             }
         }

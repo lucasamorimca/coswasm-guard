@@ -94,6 +94,18 @@ impl Detector for UnsafeUnwrap {
                         "Replace `.unwrap()` with `?` or handle the error explicitly."
                             .to_string(),
                     ),
+                    fix: Some(FixSuggestion {
+                        description: format!("Replace `.{}()` with `?`", method),
+                        replacement_text: "?".to_string(),
+                        location: SourceLocation {
+                            file: path.clone(),
+                            start_line: *line,
+                            end_line: *line,
+                            start_col: *col,
+                            end_col: *col,
+                            snippet: None,
+                        },
+                    }),
                 });
             }
         }

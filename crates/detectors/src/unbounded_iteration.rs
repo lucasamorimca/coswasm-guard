@@ -148,6 +148,7 @@ impl Detector for UnboundedIteration {
                          `MAP.range(storage, None, None, Order::Ascending).take(100)`"
                             .to_string(),
                     ),
+                    fix: None,
                 });
             }
         }

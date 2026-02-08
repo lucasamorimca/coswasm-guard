@@ -57,6 +57,7 @@ impl Detector for StorageKeyCollision {
                     recommendation: Some(
                         "Use unique storage key strings for each state item.".to_string(),
                     ),
+                    fix: None,
                 });
             } else {
                 seen.insert(key, &item.name);

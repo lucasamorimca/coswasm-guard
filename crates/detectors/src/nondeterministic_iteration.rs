@@ -137,6 +137,7 @@ impl Detector for NondeterministicIteration {
                     recommendation: Some(
                         "Use `BTreeMap` instead, or collect into a Vec and sort.".to_string(),
                     ),
+                    fix: None,
                 });
             }
         }

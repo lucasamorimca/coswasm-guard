@@ -177,6 +177,7 @@ impl Detector for MissingAccessControl {
                      `if info.sender != config.owner { return Err(...); }`"
                         .to_string(),
                 ),
+                fix: None,
             });
         }
 

@@ -55,14 +55,41 @@ pub fn print(report: &AnalysisReport) -> Result<()> {
                 })
                 .collect();
 
-            json!({
+            let mut result = json!({
                 "ruleId": f.detector_name,
                 "level": severity_to_sarif_level(&f.severity),
                 "message": {
                     "text": f.description
                 },
                 "locations": locations
-            })
+            });
+
+            // Add fix suggestions if present
+            if let Some(fix) = &f.fix {
+                result["fixes"] = json!([{
+                    "description": {
+                        "text": fix.description
+                    },
+                    "artifactChanges": [{
+                        "artifactLocation": {
+                            "uri": fix.location.file.display().to_string()
+                        },
+                        "replacements": [{
+                            "deletedRegion": {
+                                "startLine": fix.location.start_line,
+                                "startColumn": fix.location.start_col + 1,
+                                "endLine": fix.location.end_line,
+                                "endColumn": fix.location.end_col + 1
+                            },
+                            "insertedContent": {
+                                "text": fix.replacement_text
+                            }
+                        }]
+                    }]
+                }]);
+            }
+
+            result
         })
         .collect();
 

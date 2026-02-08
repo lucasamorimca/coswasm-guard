@@ -3,6 +3,8 @@ name = "cosmwasm-guard-detectors"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description.workspace = true
+repository.workspace = true
 
 [dependencies]
 cosmwasm-guard = { path = "../core" }

@@ -94,6 +94,7 @@ impl Detector for SubmessageReplyUnvalidated {
                          to validate the submessage ID."
                             .to_string(),
                     ),
+                    fix: None,
                 });
             }
         }

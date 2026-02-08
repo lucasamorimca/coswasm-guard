@@ -117,6 +117,7 @@ impl Detector for MissingAddrValidate {
                                     "Validate the address with `deps.api.addr_validate(&{})?;`",
                                     field.name
                                 )),
+                                fix: None,
                             });
                         }
                     }

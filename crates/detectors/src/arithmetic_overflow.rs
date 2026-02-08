@@ -82,6 +82,7 @@ impl Detector for ArithmeticOverflow {
                         "Use checked arithmetic (e.g. `.checked_{}()`) instead.",
                         method.strip_prefix("wrapping_").unwrap_or(method)
                     )),
+                    fix: None,
                 });
             }
         }

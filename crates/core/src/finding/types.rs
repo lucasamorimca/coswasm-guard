@@ -53,6 +53,13 @@ pub struct SourceLocation {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct FixSuggestion {
+    pub description: String,
+    pub replacement_text: String,
+    pub location: SourceLocation,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct Finding {
     pub detector_name: String,
     pub title: String,
@@ -61,4 +68,6 @@ pub struct Finding {
     pub confidence: Confidence,
     pub locations: Vec<SourceLocation>,
     pub recommendation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fix: Option<FixSuggestion>,
 }

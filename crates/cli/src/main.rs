@@ -37,6 +37,14 @@ enum Commands {
         #[arg(short, long, value_delimiter = ',')]
         exclude: Option<Vec<String>>,
 
+        /// Path to config file (default: .cosmwasm-guard.toml)
+        #[arg(short, long)]
+        config: Option<PathBuf>,
+
+        /// Audit mode: enable all detectors with maximum coverage
+        #[arg(long)]
+        audit: bool,
+
         /// Suppress banner and summary
         #[arg(short, long)]
         quiet: bool,
@@ -47,6 +55,8 @@ enum Commands {
     },
     /// List all available detectors
     List,
+    /// Generate a default .cosmwasm-guard.toml config file
+    Init,
 }
 
 #[derive(ValueEnum, Clone)]
@@ -74,9 +84,14 @@ fn main() -> anyhow::Result<()> {
             severity,
             detectors,
             exclude,
+            config,
+            audit,
             quiet,
             no_color,
-        } => commands::analyze::run(&path, format, severity, detectors, exclude, quiet, no_color),
+        } => commands::analyze::run(
+            &path, format, severity, detectors, exclude, config, audit, quiet, no_color,
+        ),
         Commands::List => commands::list::run(),
+        Commands::Init => commands::init::run(),
     }
 }

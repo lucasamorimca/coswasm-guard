@@ -100,6 +100,7 @@ mod tests {
                 confidence: Confidence::High,
                 locations: vec![],
                 recommendation: None,
+                fix: None,
             }]
         }
     }

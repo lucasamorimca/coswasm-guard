@@ -81,6 +81,19 @@ impl Detector for MissingErrorPropagation {
                         "Handle the error with `?` or explicitly ignore with `.ok()`."
                             .to_string(),
                     ),
+                    fix: Some(FixSuggestion {
+                        description: "Add `.ok()` to explicitly acknowledge the discarded Result"
+                            .to_string(),
+                        replacement_text: "let _ = /* expr */.ok();".to_string(),
+                        location: SourceLocation {
+                            file: path.clone(),
+                            start_line: *line,
+                            end_line: *line,
+                            start_col: *col,
+                            end_col: *col,
+                            snippet: None,
+                        },
+                    }),
                 });
             }
         }

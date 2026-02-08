@@ -1,0 +1,55 @@
+name: "CosmWasm Guard"
+description: "Static analysis for CosmWasm smart contracts"
+inputs:
+  path:
+    description: "Path to contract directory"
+    required: false
+    default: "."
+  severity:
+    description: "Minimum severity to report (high, medium, low, info)"
+    required: false
+    default: "low"
+  format:
+    description: "Output format (text, json, sarif)"
+    required: false
+    default: "sarif"
+  audit:
+    description: "Enable audit mode (maximum coverage)"
+    required: false
+    default: "false"
+  version:
+    description: "cosmwasm-guard version to install"
+    required: false
+    default: "latest"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      shell: bash
+
+    - name: Install cosmwasm-guard
+      shell: bash
+      run: |
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          cargo install cosmwasm-guard
+        else
+          cargo install cosmwasm-guard --version "${{ inputs.version }}"
+        fi
+
+    - name: Run analysis
+      shell: bash
+      run: |
+        ARGS="analyze ${{ inputs.path }} --format ${{ inputs.format }} --severity ${{ inputs.severity }}"
+        if [ "${{ inputs.audit }}" = "true" ]; then
+          ARGS="$ARGS --audit"
+        fi
+        cosmwasm-guard $ARGS | tee cosmwasm-guard-results.sarif || true
+
+    - name: Upload SARIF (if sarif format)
+      if: inputs.format == 'sarif'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: cosmwasm-guard-results.sarif
+        category: cosmwasm-guard
