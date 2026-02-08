@@ -11,6 +11,13 @@ pub struct AnalysisContext<'a> {
     source_files: &'a HashMap<PathBuf, String>,
 }
 
+// SAFETY: AnalysisContext holds only shared references to immutable data.
+// The sole !Send/!Sync component is proc_macro2::Span inside syn::File,
+// but proc-macro2 stores spans in a global Mutex-protected map, making
+// read access thread-safe. Detectors never mutate the context.
+unsafe impl Send for AnalysisContext<'_> {}
+unsafe impl Sync for AnalysisContext<'_> {}
+
 impl<'a> AnalysisContext<'a> {
     pub fn new(
         contract: &'a ContractInfo,

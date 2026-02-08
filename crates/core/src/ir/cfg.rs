@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
+use serde::{Deserialize, Serialize};
+
 use super::instruction::{Instruction, Operand, SsaVar};
 
 pub type BlockId = usize;
 
 /// A basic block in the CFG
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BasicBlock {
     pub id: BlockId,
     pub instructions: Vec<Instruction>,
@@ -25,7 +27,7 @@ impl BasicBlock {
 }
 
 /// Def-use information for a single SSA variable
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DefUse {
     pub def_block: BlockId,
     pub def_instruction_idx: usize,
@@ -33,7 +35,7 @@ pub struct DefUse {
 }
 
 /// Control flow graph for a single function
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Cfg {
     pub function_name: String,
     pub blocks: Vec<BasicBlock>,

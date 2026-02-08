@@ -3,10 +3,13 @@ pub mod incorrect_permission_hierarchy;
 pub mod missing_access_control;
 pub mod missing_addr_validate;
 pub mod missing_error_propagation;
+pub mod missing_funds_validation;
+pub mod missing_migration_version;
 pub mod nondeterministic_iteration;
 pub mod storage_key_collision;
 pub mod submessage_reply;
 pub mod unbounded_iteration;
+pub mod uninitialized_state_access;
 pub mod unsafe_unwrap;
 
 /// Returns all built-in detectors
@@ -22,5 +25,8 @@ pub fn all_detectors() -> Vec<Box<dyn cosmwasm_guard::detector::Detector>> {
         Box::new(submessage_reply::SubmessageReplyUnvalidated),
         Box::new(nondeterministic_iteration::NondeterministicIteration),
         Box::new(incorrect_permission_hierarchy::IncorrectPermissionHierarchy),
+        Box::new(missing_funds_validation::MissingFundsValidation),
+        Box::new(uninitialized_state_access::UninitializedStateAccess),
+        Box::new(missing_migration_version::MissingMigrationVersion),
     ]
 }

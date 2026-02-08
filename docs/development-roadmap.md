@@ -12,6 +12,9 @@
 | 6 | ✅ Complete | Multi-format output (text/JSON/SARIF) | v0.1.0 |
 | 7 | ✅ Complete | CLI binary, integration tests | v0.1.0 |
 | 8 | ✅ Complete | Hardening & known issues resolution | v0.1.0 |
+| 9 | ✅ Complete | Advanced detectors (7 new detectors) | v0.2.0 |
+| 10 | ✅ Complete | Developer experience (config, suppression, --audit) | v0.3.0 |
+| 11 | ✅ Complete | Performance & caching | v0.3.0 |
 
 ## Completed Deliverables (Phase 1-7)
 
@@ -53,6 +56,47 @@
 - M4: Unbounded iteration detector only flags .range() on storage Map/IndexedMap
 - H6: Access control detector follows match arm dispatch to handler functions
 - 8 new regression tests added (35 total tests)
+
+## Phase 9: Advanced Detectors (Complete)
+
+**New detectors added (7 total, 10 detectors overall):**
+- storage-key-collision: Duplicate storage keys across state items (High/High)
+- unsafe-unwrap: Unwrap/expect in non-test code (Medium/High)
+- arithmetic-overflow: Wrapping ops (neg/wrapping_add) CWA-2024-002 (High/Medium)
+- missing-error-propagation: Discarded Result from function calls (Low/High)
+- submessage-reply-unvalidated: Reply handler without msg.id check (High/Medium)
+- nondeterministic-iteration: HashMap iteration without sorting (Medium/Medium)
+- incorrect-permission-hierarchy: Admin storage write without ownership check (Medium/Medium)
+- Test suite: 34 detector unit tests + 5 integration tests (59 total)
+
+## Phase 10: Developer Experience (Complete)
+
+**DX features added:**
+- Config system: `.cosmwasm-guard.toml` per-detector enable/disable, file exclusions
+- Inline suppression: `// cosmwasm-guard-ignore: detector-name` comment syntax
+- `--config` flag for custom config paths
+- `--audit` flag for maximum coverage + lower confidence threshold
+- `--init` flag to generate default config template
+- SARIF fixes array populated with FixSuggestion data
+- Fix suggestions: `.unwrap()` → `?` transformation, `let _ = call()` → `.ok()`
+- GitHub Action: composite action at `.github/actions/cosmwasm-guard/action.yml`
+- Test suite: 23 core unit tests + 39 detector tests + 5 integration (62 total)
+
+## Phase 11: Performance & Caching (Complete)
+
+**Performance optimizations implemented:**
+- File-level cache: SHA256 hash → bincode CachedFileArtifact per .rs file
+- Cache directory: `{crate_path}/.cosmwasm-guard-cache/` with manifest.json + artifacts/
+- Schema version in manifest for auto-invalidation
+- `--no-cache` CLI flag to disable caching when needed
+- New `analyze_crate_cached()` API; `analyze_crate()` preserved for backwards compatibility
+- `CrateAnalysis` struct bundles contract + ir + source_map
+- Parallel detection infrastructure: Rayon scopes with Mutex (disabled at runtime due to proc-macro2 span-locations incompatibility)
+- Threshold guard: >3 detectors for parallelism (set to MAX due to technical constraints)
+- Dependencies: rayon 1.10, bincode 1, sha2 0.10
+- ContractIr/FunctionIr derive Clone + Serialize + Deserialize
+- Test suite: 25 core unit tests + 34 detector tests + 5 integration (64 total)
+- Manual testing: Cache works correctly, measured improvement in incremental analysis
 
 ## Future Work (Post-MVP)
 

@@ -1,9 +1,9 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::cfg::BlockId;
 
 /// SSA variable: each assigned exactly once
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SsaVar {
     pub name: String,
     pub version: u32,
@@ -16,7 +16,7 @@ impl std::fmt::Display for SsaVar {
 }
 
 /// IR instructions — normalized operations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Instruction {
     // Core operations
     Assign {
@@ -100,7 +100,7 @@ pub enum Instruction {
 }
 
 /// Operand — values used in instructions
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Operand {
     Var(SsaVar),
     Literal(LiteralValue),
@@ -108,7 +108,7 @@ pub enum Operand {
 }
 
 /// Binary operations
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -132,7 +132,7 @@ pub enum BinaryOp {
 }
 
 /// Unary operations
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum UnaryOp {
     Not,
     Neg,
@@ -142,7 +142,7 @@ pub enum UnaryOp {
 }
 
 /// Literal values
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LiteralValue {
     Int(i128),
     Uint(u128),

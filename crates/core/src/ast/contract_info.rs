@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Source location in a file
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SourceSpan {
     pub file: PathBuf,
     pub start_line: usize,
@@ -13,14 +13,14 @@ pub struct SourceSpan {
 }
 
 /// Parameter info for functions/entry points
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParamInfo {
     pub name: String,
     pub type_name: String,
 }
 
 /// Kind of CosmWasm entry point
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EntryPointKind {
     Instantiate,
     Execute,
@@ -32,7 +32,7 @@ pub enum EntryPointKind {
 }
 
 /// A #[entry_point] function
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntryPoint {
     pub name: String,
     pub kind: EntryPointKind,
@@ -42,7 +42,7 @@ pub struct EntryPoint {
 }
 
 /// Message enum kind
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MessageKind {
     Instantiate,
     Execute,
@@ -52,21 +52,21 @@ pub enum MessageKind {
 }
 
 /// A field in a message variant
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldInfo {
     pub name: String,
     pub type_name: String,
 }
 
 /// A variant in a message enum
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageVariant {
     pub name: String,
     pub fields: Vec<FieldInfo>,
 }
 
 /// A message enum (ExecuteMsg, QueryMsg, etc.)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageEnum {
     pub name: String,
     pub kind: MessageKind,
@@ -75,7 +75,7 @@ pub struct MessageEnum {
 }
 
 /// Storage type (cw-storage-plus)
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StorageType {
     Item,
     Map,
@@ -83,7 +83,7 @@ pub enum StorageType {
 }
 
 /// A state storage declaration
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateItem {
     pub name: String,
     pub storage_type: StorageType,
@@ -94,18 +94,20 @@ pub struct StateItem {
 }
 
 /// Generic function info
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionInfo {
     pub name: String,
     pub params: Vec<ParamInfo>,
     pub return_type: Option<String>,
     pub span: SourceSpan,
+    /// syn::Block is not serializable — skipped during caching, re-parsed on cache hit
+    #[serde(skip)]
     pub body: Option<syn::Block>,
 }
 
 /// Top-level container for parsed CosmWasm contract information.
 /// For multi-file crates, this merges data from all source files.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ContractInfo {
     pub crate_path: PathBuf,
     pub source_files: Vec<PathBuf>,
@@ -113,6 +115,8 @@ pub struct ContractInfo {
     pub message_enums: Vec<MessageEnum>,
     pub state_items: Vec<StateItem>,
     pub functions: Vec<FunctionInfo>,
+    /// syn::File is not serializable — skipped during caching, re-populated on cache hit
+    #[serde(skip)]
     pub raw_asts: Vec<(PathBuf, syn::File)>,
 }
 

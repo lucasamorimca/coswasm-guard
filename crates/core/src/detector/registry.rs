@@ -1,6 +1,14 @@
+use std::sync::Mutex;
+
 use super::context::AnalysisContext;
 use super::traits::Detector;
 use crate::finding::{Finding, Severity};
+
+/// Minimum detector count before switching to parallel execution.
+/// Set high because proc-macro2 span-locations uses a global SourceMap
+/// that panics when spans are accessed across Rayon thread boundaries.
+/// Parallel detection will be enabled once detectors decouple from raw AST spans.
+const PARALLEL_THRESHOLD: usize = usize::MAX;
 
 /// Registry that holds all detectors and runs them against contracts.
 pub struct DetectorRegistry {
@@ -24,25 +32,37 @@ impl DetectorRegistry {
         self.detectors.extend(detectors);
     }
 
-    /// Run all registered detectors, return aggregated findings sorted by severity
+    /// Run all registered detectors, return aggregated findings sorted by severity.
+    /// Uses rayon::scope for parallel execution when detector count exceeds threshold.
     pub fn run_all(&self, context: &AnalysisContext) -> Vec<Finding> {
-        let mut findings: Vec<Finding> = self
-            .detectors
-            .iter()
-            .flat_map(|d| d.detect(context))
-            .collect();
+        let mut findings = if self.detectors.len() >= PARALLEL_THRESHOLD {
+            run_parallel(&self.detectors, context)
+        } else {
+            self.detectors
+                .iter()
+                .flat_map(|d| d.detect(context))
+                .collect()
+        };
         findings.sort_by(|a, b| a.severity.cmp(&b.severity));
         findings
     }
 
     /// Run only detectors matching the given names
     pub fn run_selected(&self, names: &[&str], context: &AnalysisContext) -> Vec<Finding> {
-        let mut findings: Vec<Finding> = self
+        let selected: Vec<&Box<dyn Detector>> = self
             .detectors
             .iter()
             .filter(|d| names.contains(&d.name()))
-            .flat_map(|d| d.detect(context))
             .collect();
+        let mut findings = if selected.len() >= PARALLEL_THRESHOLD {
+            let as_refs: Vec<&dyn Detector> = selected.iter().map(|d| &***d).collect();
+            run_parallel_refs(&as_refs, context)
+        } else {
+            selected
+                .iter()
+                .flat_map(|d| d.detect(context))
+                .collect()
+        };
         findings.sort_by(|a, b| a.severity.cmp(&b.severity));
         findings
     }
@@ -59,6 +79,38 @@ impl DetectorRegistry {
             .filter(|f| f.severity <= *min)
             .collect()
     }
+}
+
+/// Run detectors in parallel using rayon::scope (safe scoped parallelism).
+/// rayon::scope guarantees all spawned tasks complete before returning,
+/// so references to context and detectors are valid for the entire scope.
+fn run_parallel(detectors: &[Box<dyn Detector>], context: &AnalysisContext) -> Vec<Finding> {
+    let results: Mutex<Vec<Finding>> = Mutex::new(Vec::new());
+    rayon::scope(|s| {
+        for detector in detectors {
+            let results = &results;
+            s.spawn(move |_| {
+                let findings = detector.detect(context);
+                results.lock().unwrap().extend(findings);
+            });
+        }
+    });
+    results.into_inner().unwrap()
+}
+
+/// Same as run_parallel but for a slice of trait object references
+fn run_parallel_refs(detectors: &[&dyn Detector], context: &AnalysisContext) -> Vec<Finding> {
+    let results: Mutex<Vec<Finding>> = Mutex::new(Vec::new());
+    rayon::scope(|s| {
+        for detector in detectors {
+            let results = &results;
+            s.spawn(move |_| {
+                let findings = detector.detect(context);
+                results.lock().unwrap().extend(findings);
+            });
+        }
+    });
+    results.into_inner().unwrap()
 }
 
 impl Default for DetectorRegistry {

@@ -22,9 +22,22 @@ pub enum ExecuteMsg {
 }
 
 #[entry_point]
+pub fn instantiate(
+    deps: DepsMut, _env: Env, info: MessageInfo, _msg: InstantiateMsg,
+) -> StdResult<Response> {
+    // SAFE: state initialized in instantiate
+    CONFIG.save(deps.storage, &Config { owner: info.sender.to_string() })?;
+    Ok(Response::new())
+}
+
+#[entry_point]
 pub fn execute(
     deps: DepsMut, _env: Env, info: MessageInfo, msg: ExecuteMsg,
 ) -> StdResult<Response> {
+    // SAFE: funds validated
+    if !info.funds.is_empty() {
+        return Err(StdError::generic_err("no funds expected"));
+    }
     match msg {
         ExecuteMsg::Transfer { recipient, amount } => {
             // SAFE: address validated

@@ -1,10 +1,12 @@
+use serde::{Deserialize, Serialize};
+
 use crate::ast::SourceSpan;
 
 use super::cfg::Cfg;
 use super::instruction::SsaVar;
 
 /// IR representation of an entire contract
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContractIr {
     pub functions: Vec<FunctionIr>,
     pub entry_points: Vec<String>,
@@ -36,7 +38,7 @@ impl Default for ContractIr {
 }
 
 /// IR for a single function
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FunctionIr {
     pub name: String,
     pub params: Vec<SsaVar>,

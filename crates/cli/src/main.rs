@@ -45,6 +45,10 @@ enum Commands {
         #[arg(long)]
         audit: bool,
 
+        /// Disable file-level caching of parsed AST and IR
+        #[arg(long)]
+        no_cache: bool,
+
         /// Suppress banner and summary
         #[arg(short, long)]
         quiet: bool,
@@ -86,10 +90,11 @@ fn main() -> anyhow::Result<()> {
             exclude,
             config,
             audit,
+            no_cache,
             quiet,
             no_color,
         } => commands::analyze::run(
-            &path, format, severity, detectors, exclude, config, audit, quiet, no_color,
+            &path, format, severity, detectors, exclude, config, audit, no_cache, quiet, no_color,
         ),
         Commands::List => commands::list::run(),
         Commands::Init => commands::init::run(),
