@@ -1,6 +1,6 @@
 # cosmwasm-guard
 
-AST-based static analysis framework for CosmWasm smart contracts. Like [Slither](https://github.com/crytic/slither) for Solidity, but for Rust-based CosmWasm contracts.
+AST-based static analysis framework for CosmWasm smart contracts.
 
 ## Features
 
