@@ -8,7 +8,7 @@ use cosmwasm_guard_detectors::all_detectors;
 
 fn analyze_source(source: &str) -> Vec<cosmwasm_guard::finding::Finding> {
     let ast = parse_source(source).unwrap();
-    let contract = ContractVisitor::extract(PathBuf::from("test.rs"), &ast);
+    let contract = ContractVisitor::extract(PathBuf::from("test.rs"), ast);
     let ir = IrBuilder::build_contract(&contract);
     let mut sources = HashMap::new();
     sources.insert(PathBuf::from("test.rs"), source.to_string());

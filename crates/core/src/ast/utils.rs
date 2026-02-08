@@ -36,6 +36,51 @@ pub fn infer_entry_point_kind(fn_name: &str) -> EntryPointKind {
     }
 }
 
+/// Fallback: infer entry point kind from parameter types when name is Unknown.
+/// Uses CosmWasm signature conventions (msg type name + deps mutability).
+pub fn infer_entry_point_kind_from_params(params: &[super::contract_info::ParamInfo]) -> EntryPointKind {
+    let type_names: Vec<&str> = params.iter().map(|p| p.type_name.as_str()).collect();
+
+    // Check for Reply type (unique parameter)
+    if type_names.contains(&"Reply") {
+        return EntryPointKind::Reply;
+    }
+
+    let has_deps_mut = type_names.iter().any(|t| t.contains("DepsMut"));
+    let has_message_info = type_names.iter().any(|t| t.contains("MessageInfo"));
+
+    // Infer from msg type name if present (last param is typically the msg)
+    if let Some(last) = params.last() {
+        let msg_type = &last.type_name;
+        if msg_type.contains("Instantiate") {
+            return EntryPointKind::Instantiate;
+        }
+        if msg_type.contains("Execute") {
+            return EntryPointKind::Execute;
+        }
+        if msg_type.contains("Query") {
+            return EntryPointKind::Query;
+        }
+        if msg_type.contains("Migrate") {
+            return EntryPointKind::Migrate;
+        }
+        if msg_type.contains("Sudo") {
+            return EntryPointKind::Sudo;
+        }
+    }
+
+    // Fallback: use deps mutability + MessageInfo presence
+    if has_message_info && has_deps_mut {
+        // Could be Execute or Instantiate — can't distinguish without msg type
+        return EntryPointKind::Execute;
+    }
+    if !has_deps_mut {
+        return EntryPointKind::Query;
+    }
+
+    EntryPointKind::Unknown
+}
+
 /// Check if a type path matches a cw-storage-plus storage type
 pub fn detect_storage_type(path: &syn::Path) -> Option<StorageType> {
     let last_segment = path.segments.last()?;

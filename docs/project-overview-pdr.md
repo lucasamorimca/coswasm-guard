@@ -45,5 +45,6 @@
 
 ## Timeline
 
-- Phase 1-7: Complete (MVP delivered)
-- Future phases: Taint analysis, constraint solver, additional detectors
+- Phase 1-7: Complete (MVP delivered, v0.1.0)
+- Phase 8: Complete (Hardening & known issues resolution, v0.1.0)
+- Phase 9+: Taint analysis, constraint solver, advanced detectors, plugin system

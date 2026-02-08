@@ -44,15 +44,17 @@ CLI binary (cosmwasm-guard):
 
 ### ContractInfo (ast/contract_info.rs)
 Unified model extracted from all .rs files in a crate:
-- Function definitions with entry point markers
+- Function definitions with entry point markers (includes param-type-based kind inference)
 - Type definitions (structs, enums)
 - Module structure
+- Efficient extraction via owned syn::File (eliminates AST cloning)
 
 ### SSA IR (ir/)
 - **Instruction** — Operations with operands (binary/unary ops, calls, literals)
 - **Cfg** — Basic blocks + edges for control flow
 - **FunctionIr** — Per-function IR with data dependencies
 - **ContractIr** — All functions + metadata
+- **Path Resolver** — Avoids phantom SSA vars for enum variants/type paths (Phase 8 hardening)
 
 ### AnalysisContext (detector/context.rs)
 Passed to detectors:
@@ -75,3 +77,13 @@ Structured vulnerability report:
 3. **Build IR:** CFG construction, def-use analysis
 4. **Detect:** Each detector queries IR/AST patterns
 5. **Report:** Findings aggregated, formatted, output
+
+## Known Limitations & Phase 8 Resolutions
+
+| Issue | Status | Notes |
+|-------|--------|-------|
+| Phantom SSA vars for enum variants | ✅ Resolved (Phase 8 H1) | Path resolver now avoids creating unnecessary vars |
+| AST cloning overhead in extract() | ✅ Resolved (Phase 8 H5) | Changed to owned syn::File parameter |
+| Non-standard entry point detection | ✅ Resolved (Phase 8 M2) | Now infers kind from param types if name doesn't match |
+| Unbounded iteration false positives | ✅ Resolved (Phase 8 M4) | Only flags .range() on storage Map/IndexedMap |
+| Access control dispatch limitation | ✅ Partially resolved (Phase 8 H6) | Now follows match arm dispatch; non-match dispatch requires advanced analysis |

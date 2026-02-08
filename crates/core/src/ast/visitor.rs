@@ -25,10 +25,11 @@ impl ContractVisitor {
         }
     }
 
-    /// Parse and visit a file, returning a single-file ContractInfo
-    pub fn extract(file_path: PathBuf, ast: &syn::File) -> ContractInfo {
+    /// Parse and visit a file, returning a single-file ContractInfo.
+    /// Takes ownership of `ast` to avoid cloning the entire syn::File tree.
+    pub fn extract(file_path: PathBuf, ast: syn::File) -> ContractInfo {
         let mut visitor = ContractVisitor::new(file_path.clone());
-        syn::visit::visit_file(&mut visitor, ast);
+        syn::visit::visit_file(&mut visitor, &ast);
 
         let mut info = ContractInfo::new(file_path.clone());
         info.merge_from_visitor(
@@ -37,7 +38,7 @@ impl ContractVisitor {
             visitor.state_items,
             visitor.functions,
             file_path,
-            ast.clone(),
+            ast,
         );
         info
     }
@@ -74,7 +75,10 @@ impl<'ast> Visit<'ast> for ContractVisitor {
         let is_entry_point = node.attrs.iter().any(utils::is_entry_point_attr);
 
         if is_entry_point {
-            let kind = utils::infer_entry_point_kind(&fn_name);
+            let mut kind = utils::infer_entry_point_kind(&fn_name);
+            if kind == EntryPointKind::Unknown {
+                kind = utils::infer_entry_point_kind_from_params(&params);
+            }
             let has_deps_mut = params.iter().any(|p| p.type_name.contains("DepsMut"));
 
             self.entry_points.push(EntryPoint {
@@ -260,7 +264,7 @@ mod tests {
 
     fn parse_and_visit(source: &str) -> ContractInfo {
         let ast = parse_source(source).unwrap();
-        ContractVisitor::extract(PathBuf::from("test.rs"), &ast)
+        ContractVisitor::extract(PathBuf::from("test.rs"), ast)
     }
 
     #[test]
@@ -331,5 +335,37 @@ mod tests {
         assert_eq!(info.entry_points.len(), 1);
         assert_eq!(info.entry_points[0].kind, EntryPointKind::Query);
         assert!(!info.entry_points[0].has_deps_mut);
+    }
+
+    // --- M2 regression: renamed entry points infer kind from param types ---
+
+    #[test]
+    fn test_m2_renamed_execute_entry_point() {
+        // Renamed function with #[entry_point] should infer Execute from msg type
+        let source = r#"
+            #[entry_point]
+            pub fn handle_exec(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg)
+                -> StdResult<Response> {
+                Ok(Response::new())
+            }
+        "#;
+        let info = parse_and_visit(source);
+        assert_eq!(info.entry_points.len(), 1);
+        assert_eq!(info.entry_points[0].name, "handle_exec");
+        assert_eq!(info.entry_points[0].kind, EntryPointKind::Execute);
+    }
+
+    #[test]
+    fn test_m2_renamed_query_entry_point() {
+        // Renamed query function should infer Query from msg type
+        let source = r#"
+            #[entry_point]
+            pub fn my_query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+                Ok(Binary::default())
+            }
+        "#;
+        let info = parse_and_visit(source);
+        assert_eq!(info.entry_points.len(), 1);
+        assert_eq!(info.entry_points[0].kind, EntryPointKind::Query);
     }
 }

@@ -6,6 +6,43 @@ use super::cfg::{BlockId, Cfg};
 use super::instruction::*;
 use super::types::{ContractIr, FunctionIr};
 
+/// Classifies a path expression to avoid creating phantom SSA vars
+/// for enum variants, type paths, and qualified paths.
+#[derive(Debug, PartialEq)]
+enum PathKind {
+    /// A known local variable reference
+    Variable,
+    /// A type path or enum variant (PascalCase, multi-segment, etc.)
+    TypeOrVariant,
+}
+
+/// Classify a path expression based on scope and naming conventions.
+/// Multi-segment paths (e.g. `Foo::Bar`) are always type/variant.
+/// Single-segment PascalCase identifiers (e.g. `Response`) are type/variant.
+/// Single-segment identifiers found in the current scope are variables.
+fn classify_path(path: &syn::ExprPath, known_vars: &HashMap<String, u32>) -> PathKind {
+    if path.path.segments.len() > 1 {
+        return PathKind::TypeOrVariant;
+    }
+    let ident = path.path.segments[0].ident.to_string();
+    // Known variable in scope — always a variable
+    if known_vars.contains_key(&ident) {
+        return PathKind::Variable;
+    }
+    // SCREAMING_SNAKE_CASE (e.g. MAX_LIMIT, CONFIG) — treat as variable
+    // (Rust constants are effectively variable references in expressions)
+    if ident.chars().all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit()) {
+        return PathKind::Variable;
+    }
+    // PascalCase heuristic: starts with uppercase = type or enum variant
+    if ident.starts_with(|c: char| c.is_ascii_uppercase()) {
+        return PathKind::TypeOrVariant;
+    }
+    // Unknown lowercase identifier — treat as variable (could be a parameter
+    // not yet lowered, or an external name)
+    PathKind::Variable
+}
+
 /// Transforms syn AST function bodies into SSA-form IR
 pub struct IrBuilder {
     current_block: BlockId,
@@ -194,28 +231,33 @@ impl IrBuilder {
     }
 
     fn lower_path(&mut self, path: &syn::ExprPath) -> Operand {
-        let name = path
-            .path
-            .segments
-            .iter()
-            .map(|s| s.ident.to_string())
-            .collect::<Vec<_>>()
-            .join("::");
-
-        // Check if this is a known variable
-        if path.path.segments.len() == 1 {
-            let ident = path.path.segments[0].ident.to_string();
-            if let Some(&version) = self.var_counter.get(&ident) {
-                return Operand::Var(SsaVar {
-                    name: ident,
-                    version: version.saturating_sub(1),
-                });
+        match classify_path(path, &self.var_counter) {
+            PathKind::TypeOrVariant => {
+                // Enum variants and type paths produce a literal marker,
+                // not an SSA variable, to avoid polluting def-use chains.
+                let name = path
+                    .path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.to_string())
+                    .collect::<Vec<_>>()
+                    .join("::");
+                Operand::Literal(LiteralValue::String(name))
+            }
+            PathKind::Variable => {
+                let ident = path.path.segments[0].ident.to_string();
+                if let Some(&version) = self.var_counter.get(&ident) {
+                    Operand::Var(SsaVar {
+                        name: ident,
+                        version: version.saturating_sub(1),
+                    })
+                } else {
+                    // Unknown variable — create fresh SSA var
+                    let var = self.new_ssa_var(&ident);
+                    Operand::Var(var)
+                }
             }
         }
-
-        // Treat as a fresh variable reference
-        let var = self.new_ssa_var(&name);
-        Operand::Var(var)
     }
 
     fn lower_binary(&mut self, bin: &syn::ExprBinary) -> Operand {
@@ -510,7 +552,7 @@ mod tests {
 
     fn build_ir(source: &str) -> ContractIr {
         let ast = parse_source(source).unwrap();
-        let contract = ContractVisitor::extract(PathBuf::from("test.rs"), &ast);
+        let contract = ContractVisitor::extract(PathBuf::from("test.rs"), ast);
         IrBuilder::build_contract(&contract)
     }
 
@@ -587,5 +629,48 @@ mod tests {
                 .any(|i| matches!(i, Instruction::AddrValidate { .. }))
         });
         assert!(has_addr_validate);
+    }
+
+    // --- H1 regression: enum variants and type paths should NOT create SSA vars ---
+
+    #[test]
+    fn test_h1_enum_variant_not_ssa_var() {
+        // Enum variant paths like Response::new() should not pollute def-use chains
+        let source = r#"
+            fn make_response() {
+                let x = Response::new();
+            }
+        "#;
+        let ir = build_ir(source);
+        let func = &ir.functions[0];
+        // Should NOT have an SSA var named "Response::new"
+        let has_phantom = func.cfg.blocks.iter().any(|b| {
+            b.instructions.iter().any(|i| match i {
+                Instruction::Assign { dest, .. } => dest.name.contains("Response"),
+                _ => false,
+            })
+        });
+        assert!(!has_phantom, "H1: enum variant path created phantom SSA var");
+    }
+
+    #[test]
+    fn test_h1_local_var_still_works() {
+        // Known local variables should still be tracked as SSA vars
+        let source = r#"
+            fn use_var() {
+                let count = 5;
+                let result = count;
+            }
+        "#;
+        let ir = build_ir(source);
+        let func = &ir.functions[0];
+        // 'count' should be an SSA var used in the assignment to 'result'
+        let has_count_var = func.cfg.blocks.iter().any(|b| {
+            b.instructions.iter().any(|i| match i {
+                Instruction::Assign { value: Operand::Var(v), .. } => v.name == "count",
+                _ => false,
+            })
+        });
+        assert!(has_count_var, "H1: local variable should still be an SSA var");
     }
 }

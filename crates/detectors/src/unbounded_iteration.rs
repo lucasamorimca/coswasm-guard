@@ -1,3 +1,6 @@
+use std::collections::HashSet;
+
+use cosmwasm_guard::ast::StorageType;
 use cosmwasm_guard::detector::{AnalysisContext, Detector};
 use cosmwasm_guard::finding::*;
 use syn::visit::Visit;
@@ -9,6 +12,8 @@ pub struct UnboundedIteration;
 struct RangeCallSearcher {
     unbounded_ranges: Vec<UnboundedRange>,
     file_path: std::path::PathBuf,
+    /// Known storage Map/IndexedMap names to qualify .range() calls
+    storage_map_names: HashSet<String>,
 }
 
 struct UnboundedRange {
@@ -28,15 +33,36 @@ impl<'ast> Visit<'ast> for RangeCallSearcher {
             let has_take = chain.iter().any(|m| m == "take");
 
             if has_range && !has_take {
-                let span = node.method.span();
-                self.unbounded_ranges.push(UnboundedRange {
-                    line: span.start().line,
-                    col: span.start().column,
-                });
+                // Only flag if receiver base is a known storage Map
+                let base_name = extract_chain_base(node);
+                let is_storage_map = base_name
+                    .as_ref()
+                    .is_some_and(|name| self.storage_map_names.contains(name));
+
+                if is_storage_map {
+                    let span = node.method.span();
+                    self.unbounded_ranges.push(UnboundedRange {
+                        line: span.start().line,
+                        col: span.start().column,
+                    });
+                }
             }
         }
 
         syn::visit::visit_expr_method_call(self, node);
+    }
+}
+
+/// Walk to the base of a method chain and extract the identifier name
+fn extract_chain_base(node: &syn::ExprMethodCall) -> Option<String> {
+    let mut current: &syn::Expr = &node.receiver;
+    while let syn::Expr::MethodCall(mc) = current {
+        current = &mc.receiver;
+    }
+    if let syn::Expr::Path(path) = current {
+        path.path.segments.last().map(|s| s.ident.to_string())
+    } else {
+        None
     }
 }
 
@@ -81,10 +107,20 @@ impl Detector for UnboundedIteration {
     fn detect(&self, ctx: &AnalysisContext) -> Vec<Finding> {
         let mut findings = Vec::new();
 
+        // Collect known Map/IndexedMap storage item names
+        let storage_map_names: HashSet<String> = ctx
+            .contract
+            .state_items
+            .iter()
+            .filter(|s| matches!(s.storage_type, StorageType::Map | StorageType::IndexedMap))
+            .map(|s| s.name.clone())
+            .collect();
+
         for (path, ast) in ctx.raw_asts() {
             let mut searcher = RangeCallSearcher {
                 unbounded_ranges: Vec::new(),
                 file_path: path.clone(),
+                storage_map_names: storage_map_names.clone(),
             };
             syn::visit::visit_file(&mut searcher, ast);
 
@@ -130,7 +166,7 @@ mod tests {
 
     fn analyze(source: &str) -> Vec<Finding> {
         let ast = parse_source(source).unwrap();
-        let contract = ContractVisitor::extract(PathBuf::from("test.rs"), &ast);
+        let contract = ContractVisitor::extract(PathBuf::from("test.rs"), ast);
         let ir = IrBuilder::build_contract(&contract);
         let mut sources = HashMap::new();
         sources.insert(PathBuf::from("test.rs"), source.to_string());
@@ -141,6 +177,7 @@ mod tests {
     #[test]
     fn test_detects_unbounded_range() {
         let source = r#"
+            const BALANCES: Map<&str, Uint128> = Map::new("balances");
             fn list_all(deps: Deps) -> Vec<(String, u128)> {
                 BALANCES
                     .range(deps.storage, None, None, Order::Ascending)
@@ -156,6 +193,7 @@ mod tests {
     #[test]
     fn test_no_finding_with_take() {
         let source = r#"
+            const BALANCES: Map<&str, Uint128> = Map::new("balances");
             fn list_limited(deps: Deps, limit: usize) -> Vec<(String, u128)> {
                 BALANCES
                     .range(deps.storage, None, None, Order::Ascending)
@@ -177,5 +215,44 @@ mod tests {
         "#;
         let findings = analyze(source);
         assert!(findings.is_empty());
+    }
+
+    // --- M4 regression: non-storage .range() should not trigger ---
+
+    #[test]
+    fn test_m4_non_storage_range_no_finding() {
+        // A .range() call on a non-storage receiver should NOT trigger
+        let source = r#"
+            fn compute(data: Vec<u32>) {
+                let items: Vec<u32> = data
+                    .iter()
+                    .range(0..10)
+                    .collect::<Vec<_>>();
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(
+            findings.is_empty(),
+            "M4: non-storage .range() should not trigger unbounded-iteration"
+        );
+    }
+
+    #[test]
+    fn test_m4_storage_range_still_detected() {
+        // A .range() on a declared Map without .take() should still trigger
+        let source = r#"
+            const USERS: Map<&str, UserInfo> = Map::new("users");
+            fn list_users(deps: Deps) -> Vec<UserInfo> {
+                USERS
+                    .range(deps.storage, None, None, Order::Ascending)
+                    .collect::<StdResult<Vec<_>>>()
+                    .unwrap()
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(
+            !findings.is_empty(),
+            "M4: storage Map .range() without .take() should still trigger"
+        );
     }
 }

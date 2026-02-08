@@ -11,6 +11,7 @@
 | 5 | ✅ Complete | 3 built-in detectors (MVP) | v0.1.0 |
 | 6 | ✅ Complete | Multi-format output (text/JSON/SARIF) | v0.1.0 |
 | 7 | ✅ Complete | CLI binary, integration tests | v0.1.0 |
+| 8 | ✅ Complete | Hardening & known issues resolution | v0.1.0 |
 
 ## Completed Deliverables (Phase 1-7)
 
@@ -19,7 +20,7 @@
 - ✅ Multi-file crate analysis via analyze_crate()
 - ✅ syn-based AST parsing with full Rust syntax support
 - ✅ Module and function extraction visitor
-- ✅ 27 passing tests (15 core + 9 detectors + 3 integration)
+- ✅ 35 passing tests (15 core + 9 detectors + 11 integration)
 
 ### IR & Analysis
 - ✅ SSA intermediate representation (SsaVar, Instruction)
@@ -43,16 +44,26 @@
 - ✅ `analyze` subcommand with filtering options
 - ✅ `list` subcommand for detector inventory
 
+## Phase 8: Hardening & Known Issues (Complete)
+
+**Improvements made:**
+- H1: Path resolver avoids phantom SSA vars for enum variants/type paths
+- H5: extract() takes owned syn::File instead of borrowing (eliminates AST clone)
+- M2: Entry point kind now inferred from param types when fn name is non-standard
+- M4: Unbounded iteration detector only flags .range() on storage Map/IndexedMap
+- H6: Access control detector follows match arm dispatch to handler functions
+- 8 new regression tests added (35 total tests)
+
 ## Future Work (Post-MVP)
 
-### Phase 8: Taint Analysis
+### Phase 9: Taint Analysis
 **Goal:** Track untrusted input flows through contract
 
 - Implement source/sink taint propagation
 - Model CosmWasm message boundary as source
 - Detect unsanitized user data in critical operations
 
-### Phase 9: Advanced Detectors (5+ more)
+### Phase 10: Advanced Detectors (5+ more)
 Potential detectors:
 - Reentrancy patterns (callback loops)
 - Unsafe numeric operations (overflow/underflow)
@@ -60,12 +71,12 @@ Potential detectors:
 - Incorrect permission hierarchies
 - Improper error handling
 
-### Phase 10: Plugin System
+### Phase 11: Plugin System
 - Detector registration via external crates
 - Custom detector distribution via crates.io
 - Detector version management
 
-### Phase 11: Constraint Solver (Optional)
+### Phase 12: Constraint Solver (Optional)
 - Path-sensitive analysis for conditions
 - Numeric constraint propagation
 - Reduce false positives on conditional checks

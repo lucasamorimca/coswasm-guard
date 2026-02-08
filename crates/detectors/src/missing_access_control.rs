@@ -1,9 +1,11 @@
-use cosmwasm_guard::ast::EntryPointKind;
+use cosmwasm_guard::ast::{EntryPointKind, FunctionInfo};
 use cosmwasm_guard::detector::{AnalysisContext, Detector};
 use cosmwasm_guard::finding::*;
 use syn::visit::Visit;
 
-/// Detects execute handlers without info.sender authorization checks
+/// Detects execute handlers without info.sender authorization checks.
+/// Follows dispatch patterns: if execute() delegates to handler functions
+/// via match arms, checks those handlers for sender checks too.
 pub struct MissingAccessControl;
 
 /// Visitor that searches for info.sender usage in expressions
@@ -14,17 +16,13 @@ struct SenderCheckSearcher {
 impl<'ast> Visit<'ast> for SenderCheckSearcher {
     fn visit_expr_field(&mut self, node: &'ast syn::ExprField) {
         if let syn::Member::Named(ident) = &node.member {
-            if ident == "sender" {
-                // Check if base is `info`
-                if is_info_expr(&node.base) {
-                    self.found_sender_check = true;
-                }
+            if ident == "sender" && is_info_expr(&node.base) {
+                self.found_sender_check = true;
             }
         }
         syn::visit::visit_expr_field(self, node);
     }
 
-    // Also check for ensure_eq!, require! macros that commonly gate access
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
         let macro_name = node
             .path
@@ -37,12 +35,28 @@ impl<'ast> Visit<'ast> for SenderCheckSearcher {
             || macro_name == "require"
             || macro_name == "assert_eq"
         {
-            // Check if tokens contain "info" and "sender"
             let tokens = node.tokens.to_string();
             if tokens.contains("info") && tokens.contains("sender") {
                 self.found_sender_check = true;
             }
         }
+    }
+}
+
+/// Visitor that extracts function call names from match arm bodies.
+/// Used to find dispatch patterns like `match msg { Variant => handler_fn(deps, ...) }`.
+struct DispatchCallCollector {
+    called_functions: Vec<String>,
+}
+
+impl<'ast> Visit<'ast> for DispatchCallCollector {
+    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        if let syn::Expr::Path(path) = node.func.as_ref() {
+            if let Some(last) = path.path.segments.last() {
+                self.called_functions.push(last.ident.to_string());
+            }
+        }
+        syn::visit::visit_expr_call(self, node);
     }
 }
 
@@ -53,6 +67,49 @@ fn is_info_expr(expr: &syn::Expr) -> bool {
     } else {
         false
     }
+}
+
+/// Check if a function body has an info.sender check
+fn has_sender_check(body: &syn::Block) -> bool {
+    let mut searcher = SenderCheckSearcher {
+        found_sender_check: false,
+    };
+    syn::visit::visit_block(&mut searcher, body);
+    searcher.found_sender_check
+}
+
+/// Extract function names called from match arms in a block (dispatch pattern)
+fn extract_dispatched_functions(body: &syn::Block) -> Vec<String> {
+    let mut collector = DispatchCallCollector {
+        called_functions: Vec::new(),
+    };
+    // Only look inside match expressions at the top level of the block
+    for stmt in &body.stmts {
+        if let syn::Stmt::Expr(syn::Expr::Match(m), _) = stmt {
+            for arm in &m.arms {
+                syn::visit::visit_expr(&mut collector, &arm.body);
+            }
+        }
+    }
+    collector.called_functions
+}
+
+/// Check if dispatched handler functions have sender checks
+fn handlers_have_sender_checks(
+    dispatched_fns: &[String],
+    all_functions: &[FunctionInfo],
+) -> bool {
+    if dispatched_fns.is_empty() {
+        return false;
+    }
+    // At least one dispatched handler must check info.sender
+    dispatched_fns.iter().any(|fn_name| {
+        all_functions
+            .iter()
+            .find(|f| f.name == *fn_name)
+            .and_then(|f| f.body.as_ref())
+            .is_some_and(has_sender_check)
+    })
 }
 
 impl Detector for MissingAccessControl {
@@ -75,50 +132,52 @@ impl Detector for MissingAccessControl {
     fn detect(&self, ctx: &AnalysisContext) -> Vec<Finding> {
         let mut findings = Vec::new();
 
-        // Find execute entry points
         for ep in &ctx.contract.entry_points {
             if ep.kind != EntryPointKind::Execute {
                 continue;
             }
 
-            // Find the matching function body
             let func = ctx.contract.functions.iter().find(|f| f.name == ep.name);
             let Some(func) = func else { continue };
             let Some(body) = &func.body else { continue };
 
-            // Check if the function body (including match arms) uses info.sender
-            let mut searcher = SenderCheckSearcher {
-                found_sender_check: false,
-            };
-            syn::visit::visit_block(&mut searcher, body);
-
-            if !searcher.found_sender_check {
-                findings.push(Finding {
-                    detector_name: self.name().to_string(),
-                    title: format!("Missing access control in execute handler `{}`", ep.name),
-                    description: format!(
-                        "Execute handler `{}` does not check `info.sender` for authorization. \
-                         Any user can call this function, which may lead to unauthorized \
-                         state changes or fund transfers.",
-                        ep.name
-                    ),
-                    severity: Severity::High,
-                    confidence: Confidence::Medium,
-                    locations: vec![SourceLocation {
-                        file: ep.span.file.clone(),
-                        start_line: ep.span.start_line,
-                        end_line: ep.span.end_line,
-                        start_col: ep.span.start_col,
-                        end_col: ep.span.end_col,
-                        snippet: None,
-                    }],
-                    recommendation: Some(
-                        "Add an authorization check: \
-                         `if info.sender != config.owner { return Err(...); }`"
-                            .to_string(),
-                    ),
-                });
+            // Direct check: does the execute function body itself check info.sender?
+            if has_sender_check(body) {
+                continue;
             }
+
+            // Dispatch following: does execute() delegate to handler functions
+            // that check info.sender?
+            let dispatched = extract_dispatched_functions(body);
+            if handlers_have_sender_checks(&dispatched, &ctx.contract.functions) {
+                continue;
+            }
+
+            findings.push(Finding {
+                detector_name: self.name().to_string(),
+                title: format!("Missing access control in execute handler `{}`", ep.name),
+                description: format!(
+                    "Execute handler `{}` does not check `info.sender` for authorization. \
+                     Any user can call this function, which may lead to unauthorized \
+                     state changes or fund transfers.",
+                    ep.name
+                ),
+                severity: Severity::High,
+                confidence: Confidence::Medium,
+                locations: vec![SourceLocation {
+                    file: ep.span.file.clone(),
+                    start_line: ep.span.start_line,
+                    end_line: ep.span.end_line,
+                    start_col: ep.span.start_col,
+                    end_col: ep.span.end_col,
+                    snippet: None,
+                }],
+                recommendation: Some(
+                    "Add an authorization check: \
+                     `if info.sender != config.owner { return Err(...); }`"
+                        .to_string(),
+                ),
+            });
         }
 
         findings
@@ -135,7 +194,7 @@ mod tests {
 
     fn analyze(source: &str) -> Vec<Finding> {
         let ast = parse_source(source).unwrap();
-        let contract = ContractVisitor::extract(PathBuf::from("test.rs"), &ast);
+        let contract = ContractVisitor::extract(PathBuf::from("test.rs"), ast);
         let ir = IrBuilder::build_contract(&contract);
         let mut sources = HashMap::new();
         sources.insert(PathBuf::from("test.rs"), source.to_string());
@@ -183,5 +242,59 @@ mod tests {
         "#;
         let findings = analyze(source);
         assert!(findings.is_empty());
+    }
+
+    // --- H6 regression: dispatch following through match arms ---
+
+    #[test]
+    fn test_h6_dispatch_to_handler_with_sender_check() {
+        // execute() dispatches to handler_transfer() which checks info.sender
+        let source = r#"
+            #[entry_point]
+            pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg)
+                -> StdResult<Response> {
+                match msg {
+                    ExecuteMsg::Transfer { recipient } => {
+                        handler_transfer(deps, env, info, recipient)
+                    }
+                }
+            }
+
+            fn handler_transfer(deps: DepsMut, env: Env, info: MessageInfo, recipient: String)
+                -> StdResult<Response> {
+                if info.sender != owner {
+                    return Err(StdError::generic_err("unauthorized"));
+                }
+                Ok(Response::new())
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(
+            findings.is_empty(),
+            "H6: dispatch to handler with sender check should not flag"
+        );
+    }
+
+    #[test]
+    fn test_h6_dispatch_to_handler_without_sender_check() {
+        // execute() dispatches to handler without any sender check
+        let source = r#"
+            #[entry_point]
+            pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg)
+                -> StdResult<Response> {
+                match msg {
+                    ExecuteMsg::Withdraw {} => handle_withdraw(deps),
+                }
+            }
+
+            fn handle_withdraw(deps: DepsMut) -> StdResult<Response> {
+                Ok(Response::new())
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(
+            !findings.is_empty(),
+            "H6: dispatch to handler without sender check should still flag"
+        );
     }
 }

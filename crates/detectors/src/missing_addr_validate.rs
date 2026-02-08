@@ -155,7 +155,7 @@ mod tests {
 
     fn analyze(source: &str) -> Vec<Finding> {
         let ast = parse_source(source).unwrap();
-        let contract = ContractVisitor::extract(PathBuf::from("test.rs"), &ast);
+        let contract = ContractVisitor::extract(PathBuf::from("test.rs"), ast);
         let ir = IrBuilder::build_contract(&contract);
         let mut sources = HashMap::new();
         sources.insert(PathBuf::from("test.rs"), source.to_string());
