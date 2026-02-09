@@ -239,6 +239,30 @@ mod tests {
     }
 
     #[test]
+    fn test_no_finding_with_may_load() {
+        // may_load() returns Option — safe on uninitialized state, should NOT flag
+        let source = r#"
+            use cw_storage_plus::Item;
+            pub const CONFIG: Item<Config> = Item::new("config");
+
+            #[entry_point]
+            pub fn instantiate(deps: DepsMut, env: Env, info: MessageInfo, msg: InstantiateMsg)
+                -> Result<Response, ContractError> {
+                Ok(Response::new())
+            }
+
+            #[entry_point]
+            pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg)
+                -> Result<Response, ContractError> {
+                let config = CONFIG.may_load(deps.storage)?;
+                Ok(Response::new())
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(findings.is_empty(), "may_load() should not be flagged as uninitialized access");
+    }
+
+    #[test]
     fn test_no_finding_without_state_items() {
         let source = r#"
             #[entry_point]

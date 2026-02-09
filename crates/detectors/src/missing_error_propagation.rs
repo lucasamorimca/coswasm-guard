@@ -11,6 +11,24 @@ struct WildcardLetSearcher {
 }
 
 impl<'ast> Visit<'ast> for WildcardLetSearcher {
+    fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
+        // Skip #[cfg(test)] modules — test code legitimately discards Results
+        let is_test = node.attrs.iter().any(|attr| {
+            if attr.path().is_ident("cfg") {
+                attr.meta
+                    .require_list()
+                    .ok()
+                    .is_some_and(|list| list.tokens.to_string().contains("test"))
+            } else {
+                false
+            }
+        });
+        if is_test {
+            return;
+        }
+        syn::visit::visit_item_mod(self, node);
+    }
+
     fn visit_local(&mut self, node: &'ast syn::Local) {
         // Check for `let _ = <call_expr>` pattern
         if let syn::Pat::Wild(wild) = &node.pat {
@@ -150,6 +168,20 @@ mod tests {
         let source = r#"
             fn ignore() {
                 let _ = 42;
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_skips_test_modules() {
+        let source = r#"
+            #[cfg(test)]
+            mod tests {
+                fn test_helper() {
+                    let _ = execute(deps.as_mut(), mock_env(), info, msg);
+                }
             }
         "#;
         let findings = analyze(source);

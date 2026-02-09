@@ -8,7 +8,6 @@ pub struct UnsafeUnwrap;
 
 struct UnwrapSearcher {
     findings: Vec<(usize, usize, String)>, // (line, col, method)
-    in_test_module: bool,
 }
 
 impl<'ast> Visit<'ast> for UnwrapSearcher {
@@ -30,11 +29,12 @@ impl<'ast> Visit<'ast> for UnwrapSearcher {
     }
 
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
-        if self.in_test_module {
+        let method = node.method.to_string();
+        // Safe chains: unwrap_or/unwrap_or_default/unwrap_or_else don't panic
+        if method == "unwrap_or" || method == "unwrap_or_default" || method == "unwrap_or_else" {
             syn::visit::visit_expr_method_call(self, node);
             return;
         }
-        let method = node.method.to_string();
         if method == "unwrap" || method == "expect" {
             let span = node.method.span();
             self.findings
@@ -67,7 +67,6 @@ impl Detector for UnsafeUnwrap {
         for (path, ast) in ctx.raw_asts() {
             let mut searcher = UnwrapSearcher {
                 findings: Vec::new(),
-                in_test_module: false,
             };
             syn::visit::visit_file(&mut searcher, ast);
 
@@ -154,6 +153,51 @@ mod tests {
         "#;
         let findings = analyze(source);
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_skips_unwrap_or_default() {
+        let source = r#"
+            fn get_value(deps: Deps) -> u64 {
+                CONFIG.load(deps.storage).unwrap_or_default()
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_skips_unwrap_or() {
+        let source = r#"
+            fn get_value(deps: Deps) -> u64 {
+                CONFIG.load(deps.storage).unwrap_or(0)
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_skips_unwrap_or_else() {
+        let source = r#"
+            fn get_value(deps: Deps) -> u64 {
+                CONFIG.load(deps.storage).unwrap_or_else(|_| 0)
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_flags_unwrap_after_unwrap_or() {
+        // unwrap_or(...).unwrap() — the outer .unwrap() should still be flagged
+        let source = r#"
+            fn get_value(deps: Deps) -> u64 {
+                CONFIG.load(deps.storage).unwrap_or(None).unwrap()
+            }
+        "#;
+        let findings = analyze(source);
+        assert_eq!(findings.len(), 1, "outer .unwrap() should still be flagged");
     }
 
     #[test]

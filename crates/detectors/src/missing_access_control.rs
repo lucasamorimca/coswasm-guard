@@ -23,6 +23,44 @@ impl<'ast> Visit<'ast> for SenderCheckSearcher {
         syn::visit::visit_expr_field(self, node);
     }
 
+    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        // Recognize ecosystem access-control helpers:
+        // assert_owner(), is_owner(), cw_ownable::assert_owner(), etc.
+        if let syn::Expr::Path(path) = node.func.as_ref() {
+            let full_path = path
+                .path
+                .segments
+                .iter()
+                .map(|s| s.ident.to_string())
+                .collect::<Vec<_>>()
+                .join("::");
+            let last_segment = path.path.segments.last().map(|s| s.ident.to_string());
+            if let Some(name) = last_segment {
+                if name == "assert_owner"
+                    || name == "is_owner"
+                    || name == "check_owner"
+                    || name == "validate_owner"
+                    || full_path.contains("cw_ownable")
+                {
+                    self.found_sender_check = true;
+                }
+            }
+        }
+        syn::visit::visit_expr_call(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        let method = node.method.to_string();
+        if method == "assert_owner"
+            || method == "is_owner"
+            || method == "check_owner"
+            || method == "validate_owner"
+        {
+            self.found_sender_check = true;
+        }
+        syn::visit::visit_expr_method_call(self, node);
+    }
+
     fn visit_macro(&mut self, node: &'ast syn::Macro) {
         let macro_name = node
             .path
@@ -36,7 +74,15 @@ impl<'ast> Visit<'ast> for SenderCheckSearcher {
             || macro_name == "assert_eq"
         {
             let tokens = node.tokens.to_string();
+            // Direct sender check: ensure_eq!(info.sender, ...)
             if tokens.contains("info") && tokens.contains("sender") {
+                self.found_sender_check = true;
+            }
+            // Owner/admin pattern with sender context:
+            // ensure_eq!(info.sender, owner, ...) or ensure!(is_admin(&info), ...)
+            if (tokens.contains("owner") || tokens.contains("admin"))
+                && (tokens.contains("info") || tokens.contains("sender"))
+            {
                 self.found_sender_check = true;
             }
         }
@@ -243,6 +289,49 @@ mod tests {
         "#;
         let findings = analyze(source);
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_no_finding_with_assert_owner() {
+        let source = r#"
+            #[entry_point]
+            pub fn execute(deps: DepsMut, _env: Env, info: MessageInfo, msg: ExecuteMsg)
+                -> StdResult<Response> {
+                assert_owner(deps.storage, &info.sender)?;
+                Ok(Response::new())
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(findings.is_empty(), "assert_owner() should count as access control");
+    }
+
+    #[test]
+    fn test_no_finding_with_cw_ownable_call() {
+        let source = r#"
+            #[entry_point]
+            pub fn execute(deps: DepsMut, _env: Env, info: MessageInfo, msg: ExecuteMsg)
+                -> StdResult<Response> {
+                cw_ownable::assert_owner(deps.storage, &info.sender)?;
+                Ok(Response::new())
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(findings.is_empty(), "cw_ownable::assert_owner() should count as access control");
+    }
+
+    #[test]
+    fn test_no_finding_with_ensure_eq_owner() {
+        let source = r#"
+            #[entry_point]
+            pub fn execute(deps: DepsMut, _env: Env, info: MessageInfo, msg: ExecuteMsg)
+                -> StdResult<Response> {
+                let owner = OWNER.load(deps.storage)?;
+                ensure_eq!(info.sender, owner, ContractError::Unauthorized);
+                Ok(Response::new())
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(findings.is_empty(), "ensure_eq! with owner should count as access control");
     }
 
     // --- H6 regression: dispatch following through match arms ---

@@ -1,5 +1,33 @@
 # Project Changelog
 
+## v0.4.0 - Phase 12 Detector Validation & False Positive Reduction
+
+**Release Date:** February 2026
+
+### Real-World Validation
+- **Baseline Test**: Copied 6 representative cw-plus contract files into `crates/cli/tests/fixtures/real-world/`
+- **Initial Run**: All 13 detectors executed without crashes, identified 5 baseline findings
+
+### False Positive Reduction (80% improvement)
+- **missing-error-propagation**: Added #[cfg(test)] module skipping to exclude test utilities from analysis
+- **unsafe-unwrap**: Added safe method chain detection (.unwrap_or, .unwrap_or_default, .unwrap_or_else) to avoid flagging non-panicking unwraps
+- **missing-access-control**: Expanded allowlist to recognize cw_ownable patterns (assert_owner, is_owner, Ownable trait methods) and ensure_eq!/ensure! macros with owner/admin checks
+- **missing-funds-validation**: Lowered confidence from Medium to Low (most execute handlers legitimately skip funds checks) and added recognition for cw_utils helpers (must_pay, nonpayable, one_coin)
+- **uninitialized-state-access**: Verified that may_load() calls are properly excluded from analysis
+
+### Metrics
+- Real-world validation results: 5 → 1 findings (1 true positive + 0 false positives)
+- Test count: 73 → 84 (11 new regression tests)
+- Code quality: 0 compiler warnings
+- All existing tests passing with no regressions
+
+### Testing
+- 84 tests total (25 core + 54 detector + 5 integration)
+- New integration test: `real_world_validation.rs` with cw-plus contracts
+- 11 new detector unit tests for FP fixes
+
+---
+
 ## v0.3.0 - Phase 11 Performance & Caching
 
 **Release Date:** February 2026

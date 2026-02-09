@@ -19,7 +19,7 @@ impl Detector for MissingFundsValidation {
     }
 
     fn confidence(&self) -> Confidence {
-        Confidence::Medium
+        Confidence::Low
     }
 
     fn detect(&self, ctx: &AnalysisContext) -> Vec<Finding> {
@@ -52,7 +52,7 @@ impl Detector for MissingFundsValidation {
                         users may accidentally send funds that get locked in the contract."
                         .to_string(),
                     severity: Severity::Medium,
-                    confidence: Confidence::Medium,
+                    confidence: Confidence::Low,
                     locations: vec![SourceLocation {
                         file: ep.span.file.clone(),
                         start_line: ep.span.start_line,
@@ -84,12 +84,6 @@ fn body_references_funds(block: &syn::Block) -> bool {
     }
 
     impl<'ast> Visit<'ast> for FundsSearcher {
-        fn visit_ident(&mut self, ident: &'ast syn::Ident) {
-            if ident == "funds" {
-                self.found = true;
-            }
-        }
-
         fn visit_expr_field(&mut self, node: &'ast syn::ExprField) {
             if let syn::Member::Named(ident) = &node.member {
                 if ident == "funds" {
@@ -98,6 +92,19 @@ fn body_references_funds(block: &syn::Block) -> bool {
                 }
             }
             syn::visit::visit_expr_field(self, node);
+        }
+
+        fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+            // Recognize cw_utils helpers: must_pay(), nonpayable(), one_coin()
+            if let syn::Expr::Path(path) = node.func.as_ref() {
+                if let Some(last) = path.path.segments.last() {
+                    let name = last.ident.to_string();
+                    if name == "must_pay" || name == "nonpayable" || name == "one_coin" {
+                        self.found = true;
+                    }
+                }
+            }
+            syn::visit::visit_expr_call(self, node);
         }
     }
 
@@ -152,6 +159,48 @@ mod tests {
         "#;
         let findings = analyze(source);
         assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn test_confidence_is_low() {
+        let source = r#"
+            #[entry_point]
+            pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg)
+                -> Result<Response, ContractError> {
+                Ok(Response::new())
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(!findings.is_empty());
+        assert_eq!(findings[0].confidence, Confidence::Low);
+    }
+
+    #[test]
+    fn test_no_finding_with_must_pay() {
+        let source = r#"
+            #[entry_point]
+            pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg)
+                -> Result<Response, ContractError> {
+                let amount = must_pay(&info, "uatom")?;
+                Ok(Response::new())
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(findings.is_empty(), "must_pay() should count as funds validation");
+    }
+
+    #[test]
+    fn test_no_finding_with_nonpayable() {
+        let source = r#"
+            #[entry_point]
+            pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg)
+                -> Result<Response, ContractError> {
+                nonpayable(&info)?;
+                Ok(Response::new())
+            }
+        "#;
+        let findings = analyze(source);
+        assert!(findings.is_empty(), "nonpayable() should count as funds validation");
     }
 
     #[test]

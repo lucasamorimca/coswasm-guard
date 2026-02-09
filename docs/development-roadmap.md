@@ -15,6 +15,7 @@
 | 9 | ✅ Complete | Advanced detectors (7 new detectors) | v0.2.0 |
 | 10 | ✅ Complete | Developer experience (config, suppression, --audit) | v0.3.0 |
 | 11 | ✅ Complete | Performance & caching | v0.3.0 |
+| 12 | ✅ Complete | Detector validation & FP reduction | v0.4.0 |
 
 ## Completed Deliverables (Phase 1-7)
 
@@ -81,6 +82,21 @@
 - Fix suggestions: `.unwrap()` → `?` transformation, `let _ = call()` → `.ok()`
 - GitHub Action: composite action at `.github/actions/cosmwasm-guard/action.yml`
 - Test suite: 23 core unit tests + 39 detector tests + 5 integration (62 total)
+
+## Phase 12: Detector Validation & False Positive Reduction (Complete)
+
+**Real-world validation and detector improvements:**
+- **Phase 1 Baseline**: Copied 6 cw-plus contract files (cw20-base, cw721-base, cw1-whitelist, cw3-multisig, cw4-group, cw20-staking)
+- **Phase 1 Results**: Ran all 13 detectors, identified 5 baseline findings (1 TP + 4 FPs)
+- **Phase 2 Detector Fixes**:
+  - missing-error-propagation: Added #[cfg(test)] module skipping
+  - unsafe-unwrap: Added safe method chain detection (.unwrap_or, .unwrap_or_default, .unwrap_or_else)
+  - missing-access-control: Added cw_ownable/cw_utils ecosystem helper allowlist
+  - missing-funds-validation: Lowered confidence to Low + added cw_utils helper recognition
+  - uninitialized-state-access: Verified may_load() already excluded
+- **Final Results**: 1 TP preserved, all 4 FPs eliminated (80% FP reduction)
+- **Test suite**: 73 → 84 tests (11 new detector regression tests)
+- **Code quality**: 0 compiler warnings, all tests passing
 
 ## Phase 11: Performance & Caching (Complete)
 
